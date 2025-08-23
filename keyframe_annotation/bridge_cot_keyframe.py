@@ -2,7 +2,7 @@ import json
 from tqdm import tqdm
 import numpy as np
 
-bridge_reasoning_path = "/data/lixiang10/embodiedCoT/embodied_features_bridge.json"
+bridge_reasoning_path = "/home/cvailab/lixiang/datasets/embodied_features_bridge/embodied_features_bridge.json"
 
 with open(bridge_reasoning_path, "r") as f:
     reasoning_data = json.load(f)
@@ -21,7 +21,7 @@ def gaussian_smooth(keyframe_list, window_size=3, sigma=1.0, threshold=0.1):
 
 
 if __name__ == "__main__":
-    use_gaussian_smooth = True
+    use_gaussian_smooth = False
     window_size = 2
 
     for filename in tqdm(reasoning_data.keys()):
@@ -81,10 +81,10 @@ if __name__ == "__main__":
             demo["features"]["move_keyframe"] = move_keyframe
             demo["features"]["vision_keyframe"] = vision_keyframe
 
-    with open(f"/data/lixiang10/embodiedCoT/embodied_features_bridge_keyframe_gauss_w{window_size}.json", "w") as f:
+    with open(f"/home/cvailab/lixiang/datasets/embodied_features_bridge/embodied_features_bridge_keyframe.json", "w") as f:
         json.dump(reasoning_data, f, indent=4)
     print(
-        f"Keyframe annotation completed and saved to /data/lixiang10/embodiedCoT/embodied_features_bridge_keyframe_gauss_w{window_size}.json"
+        f"Keyframe annotation completed and saved to /home/cvailab/lixiang/datasets/embodied_features_bridge/embodied_features_bridge_keyframe.json"
     )
 
     print(demo["features"]["move_primitive"])
