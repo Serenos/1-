@@ -978,17 +978,15 @@ class CogACT(nn.Module):
                     vision_backbone_id='dinov2-vit-l',
                     image_resize_strategy=image_resize_strategy,
                 )
-                kv_dim = self.vlm.vision_backbone.dino_featurizer.patch_embed.proj.weight.shape[
-                    0]
+                kv_dim = self.vlm.vision_backbone.dino_featurizer.patch_embed.proj.weight.shape[0]
 
             self.perceiver_resampler = PerceiverResampler(q_dim=token_size, kv_dim=kv_dim, num_latents=1, depth=2, heads=8, dropout=0.0, ff_mult=4)
 
         self.lang_action_out = lang_action_out
         self.use_cot = use_cot
         self.lang_inject = lang_inject
-        if self.lang_inject:
-            print(
-                f'-----------using lang_inject {self.lang_inject} for reasoning of VLA model-------------')
+        if self.use_cot and self.lang_inject:
+            print(f'-----------using lang_inject {self.lang_inject} for reasoning of VLA model-------------')
             assert lang_action_out or use_cot
             if self.lang_inject == 'v2':
                 self.reasoning_projector = EmbodiedReasoningProjectorv2(
@@ -1011,8 +1009,7 @@ class CogACT(nn.Module):
                 self.reasoning_projector = HierarchicalReasoningProjector(token_size)
             else:
                 self.reasoning_projector = None
-            print(
-                f'-----------using reasoning_projector {self.reasoning_projector} for reasoning of VLA model-------------')
+            print(f'-----------using reasoning_projector {self.reasoning_projector} for reasoning of VLA model-------------')
             self.reasoning_film = FiLM(token_size, token_size)
 
         self.use_moe = use_moe
@@ -1043,14 +1040,12 @@ class CogACT(nn.Module):
         self.base_prompt = ''  # f"{CotTag.TASK.value}"  # 初始化时可根据实际情况赋值
         self.frozen_prompt = None
         self.max_freezing_time = cot_frozen_step  # 可根据需要调整
-        print('------------max_freezing_time: ', self.max_freezing_time, '-----------------')
         self.time_frozen = 0
 
         self.use_cot_memory = use_cot_memory
         self.cot_memory_expire = cot_memory_expire
         if self.use_cot_memory:
-            print(
-                f'-----------self.use_cot_memory: {self.use_cot_memory}, self.cot_memory_expire: {self.cot_memory_expire}-------------')
+            print(f'-----------self.use_cot_memory: {self.use_cot_memory}, self.cot_memory_expire: {self.cot_memory_expire}-------------')
             self.use_cot_memory_attn = use_cot_memory_attn
             self.cot_memory_bank = CoTMemoryBank(
                 expire_threshold=self.cot_memory_expire, using_attention=use_cot_memory_attn, num_layers=2, feature_dim=token_size)
@@ -1136,7 +1131,7 @@ class CogACT(nn.Module):
         cognition_features = last_hidden.gather(1, expanded_indices.unsqueeze(1))  # [B, 1, D]
 
         # reasoning inject
-        if self.lang_inject:
+        if self.lang_inject and self.use_cot:
             if self.lang_inject == 'hicot_v2':
                 self.reasoning_projector.reset_state()
             max_len = int(attention_mask.sum(dim=1).max().item())
@@ -1420,7 +1415,7 @@ class CogACT(nn.Module):
             1).to(model_dtype)  # [B, 1, D]
 
         # reasoning inject
-        if self.lang_inject:
+        if self.lang_inject and self.use_cot:
             reasoning_feats = []
             for i in range(1, len(output.hidden_states)):
                 reasoning_feats.append(output.hidden_states[i][-1])
@@ -1669,7 +1664,7 @@ class CogACT(nn.Module):
             # self.cot_memory_bank.update_cot_embedding(output_decoded, reasoning_feats)
             self.cot_memory_bank.update_cot_embedding2(output_decoded, reasoning_feats, tokenizer)
 
-        if self.lang_inject != 'no':
+        if self.lang_inject != 'no' and self.use_cot:
             if self.use_cot_memory:
                 reasoning_feats = self.cot_memory_bank.get_cot_embedding()
                 if reasoning_feats is not None:
