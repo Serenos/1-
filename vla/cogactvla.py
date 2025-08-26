@@ -985,9 +985,8 @@ class CogACT(nn.Module):
         self.lang_action_out = lang_action_out
         self.use_cot = use_cot
         self.lang_inject = lang_inject
-        if self.lang_inject:
-            print(
-                f'-----------using lang_inject {self.lang_inject} for reasoning of VLA model-------------')
+        if self.use_cot and self.lang_inject:
+            print(f'-----------using lang_inject {self.lang_inject} for reasoning of VLA model-------------')
             assert lang_action_out or use_cot
             if self.lang_inject == 'v2':
                 self.reasoning_projector = EmbodiedReasoningProjectorv2(
@@ -1010,8 +1009,7 @@ class CogACT(nn.Module):
                 self.reasoning_projector = HierarchicalReasoningProjector(token_size)
             else:
                 self.reasoning_projector = None
-            print(
-                f'-----------using reasoning_projector {self.reasoning_projector} for reasoning of VLA model-------------')
+            print(f'-----------using reasoning_projector {self.reasoning_projector} for reasoning of VLA model-------------')
             self.reasoning_film = FiLM(token_size, token_size)
 
         self.use_moe = use_moe
@@ -1133,7 +1131,7 @@ class CogACT(nn.Module):
         cognition_features = last_hidden.gather(1, expanded_indices.unsqueeze(1))  # [B, 1, D]
 
         # reasoning inject
-        if self.lang_inject:
+        if self.lang_inject and self.use_cot:
             if self.lang_inject == 'hicot_v2':
                 self.reasoning_projector.reset_state()
             max_len = int(attention_mask.sum(dim=1).max().item())
@@ -1666,7 +1664,7 @@ class CogACT(nn.Module):
             # self.cot_memory_bank.update_cot_embedding(output_decoded, reasoning_feats)
             self.cot_memory_bank.update_cot_embedding2(output_decoded, reasoning_feats, tokenizer)
 
-        if self.lang_inject != 'no':
+        if self.lang_inject != 'no' and self.use_cot:
             if self.use_cot_memory:
                 reasoning_feats = self.cot_memory_bank.get_cot_embedding()
                 if reasoning_feats is not None:

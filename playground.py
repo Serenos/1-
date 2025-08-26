@@ -26,5 +26,5 @@ actions, _ = model.predict_action(
             use_ddim = True,                    # use DDIM sampling
             num_ddim_steps = 10,                # number of steps for DDIM sampling
         )
-
+print(actions)
     # results in 7-DoF actions of 16 steps with shape [16, 7]
