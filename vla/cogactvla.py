@@ -1415,7 +1415,7 @@ class CogACT(nn.Module):
             1).to(model_dtype)  # [B, 1, D]
 
         # reasoning inject
-        if self.lang_inject:
+        if self.lang_inject and self.use_cot:
             reasoning_feats = []
             for i in range(1, len(output.hidden_states)):
                 reasoning_feats.append(output.hidden_states[i][-1])

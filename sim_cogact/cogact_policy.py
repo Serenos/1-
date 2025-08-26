@@ -167,7 +167,7 @@ class CogACTInference:
         if proprio is not None:
             proprio = torch.tensor(proprio).float().unsqueeze(0).unsqueeze(0).to("cuda")
 
-        if self.cot_version is not None:
+        if self.cot_version != "no":
             do_sample = False
             if self.cot_generate_sample > 0:
                 if (timestep + 1) % self.cot_generate_sample == 0:
