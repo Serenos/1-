@@ -966,7 +966,7 @@ class CogACT(nn.Module):
         lang_inject="no",
         lang_action_out=False,
         use_cot=False,
-        use_cot_trigger=False,
+        use_temporal=False,
         use_moe=False,
         use_cot_memory=False,
         cot_memory_version='v1',
@@ -1120,7 +1120,7 @@ class CogACT(nn.Module):
         self.cot_memory_expire = cot_memory_expire
         self.cot_memory_version = cot_memory_version
         if self.use_cot_memory:
-            print(f'-----------self.use_cot_memory: {self.use_cot_memory}, self.cot_memory_expire: {self.cot_memory_expire}-------------')
+            print(f'-----------self.use_cot_memory: {self.use_cot_memory}, {self.cot_memory_version}, self.cot_memory_expire: {self.cot_memory_expire}-------------')
             if self.cot_memory_version == 'v1':
                 self.cot_memory_bank = CoTMemoryBankv1(
                     expire_threshold=self.cot_memory_expire, num_layers=2, feature_dim=token_size)

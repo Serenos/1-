@@ -123,6 +123,8 @@ class TrainConfig:
     lang_action_out: bool = False
     use_cot: bool = False
     cot_version: str = "v1"
+    use_cot_memory: bool = False
+    cot_memory_version: str = 'v1'
     cot_file_path: Optional[str] = None
     lang_inject: str = "v1"
     use_temporal: bool = False
