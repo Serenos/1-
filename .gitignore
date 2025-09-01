@@ -155,5 +155,5 @@ sh_scripts/
 third_libs/
 .run/
 lx_scripts/
-
-third_libs/SimplerEnv/simpler_env.egg-info/
+sim_cogact/
+R-VLA/
