@@ -117,7 +117,7 @@ class HFCausalLLMBackbone(LLMBackbone, ABC):
 
         # my hf has been blocked by meta. I need to use the local path
         # if hf_hub_path == 'meta-llama/Llama-2-7b-hf':
-        #     hf_hub_path = '/data/lixiang10/.cache/huggingface/hub/models--meta-llama--Llama-2-7b-hf'
+        #     hf_hub_path = '/OXE/models/huggingface/hub/llama-2-7b'
 
         # Initialize LLM (downloading from HF Hub if necessary) --> `llm_cls` is the actual {Model}ForCausalLM class!
         #   => Note: We're eschewing use of the AutoModel API so that we can be more explicit about LLM-specific details

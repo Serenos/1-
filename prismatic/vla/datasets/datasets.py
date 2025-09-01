@@ -440,7 +440,7 @@ class RLDSBatchTransform:
 
             conversation = [
                 {"from": "human", "value": f"What action should the robot take to {lang}?"},
-                {"from": "gpt", "value": f"</s>{cot_v6}"},
+                {"from": "gpt", "value": f"{cot_v6}" if cot_v6=='' else f"</s>{cot_v6}"},
             ]
             for turn in conversation:
                 prompt_builder.add_turn(turn["from"], turn["value"])
@@ -460,6 +460,7 @@ class RLDSBatchTransform:
 
             conversation = [
                 {"from": "human", "value": f"What action should the robot take to {lang}?"},
+                {"from": "gpt", "value": f"{cot_v6}" if cot_v6=='' else f"</s>{cot_v6}"},
                 {"from": "gpt", "value": f"{cot_v6}" if cot_v6=='' else f"</s>{cot_v6}" },
             ]
             for turn in conversation:
@@ -602,6 +603,10 @@ class RLDSBatchTransform:
 
         if self.print_prompt_limit > 0:
             p = prompt_builder.get_prompt()
+            print("--------------------------------")
+            print("Prompt:", p)
+            # print("Labels:", labels)
+            print("--------------------------------")
             # print("--------------------------------")
             # print("Prompt:", p)
             # print("Labels:", labels)

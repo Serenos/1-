@@ -107,7 +107,7 @@ class Exp_CogACT_OXE_Magic_Soup_Plus_Minus(Exp_SigLIP_224px_Bridge):
     max_grad_norm: float = 1.0
     learning_rate: float = 2e-5
 
-    epochs: int = 100
+    epochs: int = 5
 
 # === Define a VLA Registry Enum for Reference & Validation ===
 @unique

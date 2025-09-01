@@ -125,7 +125,7 @@ class TrainConfig:
     cot_version: str = "v1"
     cot_file_path: Optional[str] = None
     lang_inject: str = "v1"
-    use_cot_trigger: bool = False
+    use_temporal: bool = False
     use_moe: bool = False
     vlm_loss_weight: float = 0.0
     co_training_prob: float = 0.8
