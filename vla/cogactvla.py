@@ -677,14 +677,14 @@ class HierarchicalReasoningProjector(nn.Module):
         self.zH = None
         self.zL = None
 
-        self.global_query = nn.Parameter(torch.zeros(1, 1, dim))
-        self.attn = nn.MultiheadAttention(embed_dim=dim, num_heads=4, batch_first=True)
-        self.mlps = nn.ModuleList([
-            nn.Linear(dim, dim),
-            nn.GELU(),
-            nn.Linear(dim, dim),
-        ]
-        )
+        # self.global_query = nn.Parameter(torch.zeros(1, 1, dim))
+        # self.attn = nn.MultiheadAttention(embed_dim=dim, num_heads=4, batch_first=True)
+        # self.mlps = nn.ModuleList([
+        #     nn.Linear(dim, dim),
+        #     nn.GELU(),
+        #     nn.Linear(dim, dim),
+        # ]
+        # )
 
     def reset_state(self):
         self.zH = None
@@ -695,10 +695,10 @@ class HierarchicalReasoningProjector(nn.Module):
         B, T, D = x.shape
         device = x.device
 
-        q = self.global_query.expand(B, -1, -1)
-        attn_out, _ = self.attn(q, x, x, need_weights=False)
-        for mlp in self.mlps:
-            attn_out = mlp(attn_out)
+        # q = self.global_query.expand(B, -1, -1)
+        # attn_out, _ = self.attn(q, x, x, need_weights=False)
+        # for mlp in self.mlps:
+        #     attn_out = mlp(attn_out)
         if self.zH is None and self.zL is None:
             zH = torch.zeros(1, 1, D, device=device)
             zL = torch.zeros(1, 1, D, device=device)
@@ -706,22 +706,22 @@ class HierarchicalReasoningProjector(nn.Module):
             zH = self.zH
             zL = self.zL
         for t in range(B):
-            xt = attn_out[t:t+1]  # [1, T, D]
-            with torch.no_grad():
-                for _ in range(self.H_cycles):
-                    for _ in range(self.L_cycles):
-                        if not ((_ == self.H_cycles - 1) and (_ == self.L_cycles - 1)):
-                            for l_layer in self.L_level:
-                                zL = l_layer(zL, zH + xt)
-                    if not (_ == self.H_cycles - 1):
-                        for h_layer in self.H_level:
-                            zH = h_layer(zH, zL)
+            xt = x[t:t+1]  # [1, T, D]
+            # with torch.no_grad():
+            for _ in range(self.H_cycles):
+                for _ in range(self.L_cycles):
+                    if not ((_ == self.H_cycles - 1) and (_ == self.L_cycles - 1)):
+                        for l_layer in self.L_level:
+                            zL = l_layer(zL, zH + xt)
+                if not (_ == self.H_cycles - 1):
+                    for h_layer in self.H_level:
+                        zH = h_layer(zH, zL)
             for l_layer in self.L_level:
                 zL = l_layer(zL, zH + xt)
             for h_layer in self.H_level:
                 zH = h_layer(zH, zL)
-        self.zH = zH.detach()
-        self.zL = zL.detach()
+        self.zH = zH.detach().clone()
+        self.zL = zL.detach().clone()
 
         pooled = self.norm(zH)
         return pooled
@@ -897,7 +897,7 @@ class CogACT(nn.Module):
         lang_inject="no",
         lang_action_out: Optional[bool] = False,
         use_cot: Optional[bool] = False,
-        use_cot_trigger: Optional[bool] = False,
+        use_temporal: Optional[bool] = False,
         use_moe: Optional[bool] = False,
         use_cot_memory: Optional[bool] = False,
         use_cot_memory_attn: Optional[bool] = False,
@@ -985,6 +985,11 @@ class CogACT(nn.Module):
         self.lang_action_out = lang_action_out
         self.use_cot = use_cot
         self.lang_inject = lang_inject
+        self.use_temporal = use_temporal
+        if self.use_temporal:
+            print('-----------using temporal for reasoning of VLA model-------------')
+            self.temporal_projector = HierarchicalReasoningProjector(token_size)
+            
         if self.use_cot and self.lang_inject:
             print(f'-----------using lang_inject {self.lang_inject} for reasoning of VLA model-------------')
             assert lang_action_out or use_cot
@@ -1009,7 +1014,7 @@ class CogACT(nn.Module):
                 self.reasoning_projector = HierarchicalReasoningProjector(token_size)
             else:
                 self.reasoning_projector = None
-            print(f'-----------using reasoning_projector {self.reasoning_projector} for reasoning of VLA model-------------')
+            #print(f'-----------using reasoning_projector {self.reasoning_projector} for reasoning of VLA model-------------')
             self.reasoning_film = FiLM(token_size, token_size)
 
         self.use_moe = use_moe
@@ -1139,6 +1144,10 @@ class CogACT(nn.Module):
             reasoning_feats = masked_hidden[:, :max_len, :]
             reasoning_feats = reasoning_feats[:, 1:-1, :]
             reasoning_feats = self.reasoning_projector(reasoning_feats)
+            if self.use_temporal:
+                orig_feat = cognition_features
+                cognition_features = self.temporal_projector(cognition_features)
+                cognition_features = orig_feat + cognition_features
             cognition_features = self.reasoning_film(cognition_features, reasoning_feats)
 
         if self.use_moe:
