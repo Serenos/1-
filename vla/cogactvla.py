@@ -727,19 +727,12 @@ class HierarchicalReasoningProjector(nn.Module):
         return pooled
 
 
-class CoTMemoryBank:
-    def __init__(self, expire_threshold: int = 6, using_attention: bool = False, num_layers: int = 2, feature_dim: int = 4096):
+class CoTMemoryBankv1:
+    def __init__(self, expire_threshold: int = 6, num_layers: int = 2, feature_dim: int = 4096):
         self.cot_dict = {}
         self.tags = get_cot_tags_list()
         self.update_counter = {tag: 0 for tag in self.tags}  # 记录每个tag未更新次数
         self.expire_threshold = expire_threshold  # 超过5次未更新则丢弃
-        self.using_attention = using_attention  # 是否使用注意力机制
-        if using_attention:
-            print('using attention for CoT memory bank')
-            self.cross_blocks = nn.ModuleList([
-                CrossTransformerBlock(feature_dim)
-                for _ in range(num_layers)
-            ])
         self.reset()
 
     def update_cot_embedding(self, decoded: str, reasoning_feats: torch.Tensor):
@@ -856,8 +849,7 @@ class CoTMemoryBank:
             query = cognition_features[i].unsqueeze(0)  # (1, token_num, D)
             cot_hist = self.get_cot_embedding()
             if cot_hist:
-                cot_memory = torch.cat(
-                    cot_hist, dim=0).unsqueeze(0)  # (1, M, D)
+                cot_memory = torch.cat(cot_hist, dim=0).unsqueeze(0)  # (1, M, D)
                 x = query
                 for block in self.cross_blocks:
                     # cross + ffn
@@ -873,6 +865,83 @@ class CoTMemoryBank:
         self.cot_dict = {}
         self.update_counter = {tag: 0 for tag in self.tags}
 
+
+
+class CoTMemoryBankV2(nn.Module):
+    """
+    流程：
+      1. query = cognition_features[i]               # (token_num, D)
+      2. memory = concat(bank[episode_id])           # (M*token_num, D)
+      3. attn = CrossBlocks(query, memory)          # (token_num, D)
+      4. delta = attn - query
+      5. gate  = sigmoid(gate_mlp([query, delta]))  # (token_num, D)
+      6. fused = query + gate * delta
+      7. update_memory(episode_id, original query)
+    """
+
+    def __init__(self, feature_dim: int, traj_group_size: int, max_memory_size: int, num_layers: int = 2):
+        super().__init__()
+        self.feature_dim = feature_dim
+        self.traj_group_size = traj_group_size
+        self.max_memory_size = max_memory_size
+        # 多层 Cross‑Attention + FFN
+        self.cross_blocks = nn.ModuleList([
+            CrossTransformerBlock(feature_dim)
+            for _ in range(num_layers)
+        ])
+
+        # Scale‑MLP：zero‑init weight, bias = +1 ⇒ scale≈1 ⇒ fused = query
+        self.scale_mlp = nn.Linear(feature_dim * 2, feature_dim)
+        nn.init.zeros_(self.scale_mlp.weight)
+        nn.init.constant_(self.scale_mlp.bias, 1.0)
+
+        self.reset()
+
+    def reset(self):
+        self.bank = {}
+        self.global_frame_counter = {}
+
+    def update_memory(self, batch_idx: int, feature: torch.Tensor):
+        if self.training:
+            episode_id = batch_idx // self.traj_group_size
+        else:
+            episode_id = 0
+        if episode_id not in self.bank:
+            self.bank[episode_id] = []
+            self.global_frame_counter[episode_id] = 0
+        fid = self.global_frame_counter[episode_id]
+        self.bank[episode_id].append((fid, feature.detach().clone()))
+        self.global_frame_counter[episode_id] = fid + 1
+        if not self.training and len(self.bank[episode_id]) > self.max_memory_size:
+            self.bank[episode_id] = self.bank[episode_id][-self.max_memory_size:]
+
+    def process_batch(self, cognition_features: torch.Tensor) -> torch.Tensor:
+        B, token_num, D = cognition_features.shape
+        outputs = []
+        for i in range(B):
+            if self.training:
+                episode_id = i // self.traj_group_size
+            else:
+                episode_id = 0
+            query = cognition_features[i].unsqueeze(0)  # (1, token_num, D)
+            hist = [feat for _, feat in self.bank.get(episode_id, [])]
+            if hist:
+                memory = torch.cat(hist, dim=0).unsqueeze(0)  # (1, M, D)
+                x = query
+                for block in self.cross_blocks:
+                    x = block(x, memory)                         # cross + ffn
+                attn_out = x
+            else:
+                attn_out = query
+            # Gate 融合
+            cat_qo = torch.cat([query, attn_out], dim=-1)  # (1, T, 2D)
+            scale = torch.sigmoid(self.scale_mlp(cat_qo))  # 初始全 1
+            fused = scale * query + (1 - scale) * attn_out  # 初始 fused == query
+            outputs.append(fused.squeeze(0).unsqueeze(0))
+            # 更新
+            self.update_memory(i, cognition_features[i])
+        return torch.cat(outputs, dim=0)  # (B, token_num, D)
+ 
 
 class CogACT(nn.Module):
     def __init__(
@@ -895,14 +964,14 @@ class CogACT(nn.Module):
         load_proprio=False,
         proprio_to_vlm=False,
         lang_inject="no",
-        lang_action_out: Optional[bool] = False,
-        use_cot: Optional[bool] = False,
-        use_cot_trigger: Optional[bool] = False,
-        use_moe: Optional[bool] = False,
-        use_cot_memory: Optional[bool] = False,
-        use_cot_memory_attn: Optional[bool] = False,
-        cot_frozen_step: Optional[int] = 0,
-        cot_memory_expire: Optional[int] = 6,
+        lang_action_out=False,
+        use_cot=False,
+        use_cot_trigger=False,
+        use_moe=False,
+        use_cot_memory=False,
+        cot_memory_version='v1',
+        cot_frozen_step=0,
+        cot_memory_expire=6,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -1009,7 +1078,7 @@ class CogACT(nn.Module):
                 self.reasoning_projector = HierarchicalReasoningProjector(token_size)
             else:
                 self.reasoning_projector = None
-            print(f'-----------using reasoning_projector {self.reasoning_projector} for reasoning of VLA model-------------')
+            #print(f'-----------using reasoning_projector {self.reasoning_projector} for reasoning of VLA model-------------')
             self.reasoning_film = FiLM(token_size, token_size)
 
         self.use_moe = use_moe
@@ -1044,11 +1113,16 @@ class CogACT(nn.Module):
 
         self.use_cot_memory = use_cot_memory
         self.cot_memory_expire = cot_memory_expire
+        self.cot_memory_version = cot_memory_version
         if self.use_cot_memory:
             print(f'-----------self.use_cot_memory: {self.use_cot_memory}, self.cot_memory_expire: {self.cot_memory_expire}-------------')
-            self.use_cot_memory_attn = use_cot_memory_attn
-            self.cot_memory_bank = CoTMemoryBank(
-                expire_threshold=self.cot_memory_expire, using_attention=use_cot_memory_attn, num_layers=2, feature_dim=token_size)
+            if self.cot_memory_version == 'v1':
+                self.cot_memory_bank = CoTMemoryBankv1(
+                    expire_threshold=self.cot_memory_expire, num_layers=2, feature_dim=token_size)
+            if self.cot_memory_version == 'v2':
+                self.cot_memory_bank = CoTMemoryBankV2(feature_dim=token_size, traj_group_size=traj_group_size, max_memory_size=128)
+            else:
+                raise NotImplementedError(f"CoT memory version {self.cot_memory_version} is not supported.")
 
     @property
     def trainable_module_keys(self) -> List[str]:
@@ -1140,6 +1214,11 @@ class CogACT(nn.Module):
             reasoning_feats = reasoning_feats[:, 1:-1, :]
             reasoning_feats = self.reasoning_projector(reasoning_feats)
             cognition_features = self.reasoning_film(cognition_features, reasoning_feats)
+        
+        if self.use_cot_memory:
+            if self.cot_memory_version == 'v2':
+                self.cot_memory_bank.reset()
+                cognition_features = self.cot_memory_bank.process_batch(cognition_features)
 
         if self.use_moe:
             max_len = int(attention_mask.sum(dim=1).max().item())
