@@ -157,3 +157,5 @@ third_libs/
 lx_scripts/
 sim_cogact/
 R-VLA/
+weights/
+R-VLA-experiment/
